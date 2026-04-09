@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NexTracer — Autonomous Threat Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:#04060d; --bg3:#0c1220; --panel:#0f1829;
+  --border:#1a2540; --border2:#243050;
+  --green:#00ff88; --red:#ff2d55; --amber:#ffaa00;
+  --blue:#0094ff; --cyan:#00e5ff; --purple:#a855f7;
+  --text:#e2e8f0; --text2:#8899bb; --text3:#445566;
+  --mono:'Space Mono',monospace; --main:'Syne',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{height:100%;overflow:hidden;}
+body{background:var(--bg);color:var(--text);font-family:var(--main);}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,136,0.012) 2px,rgba(0,255,136,0.012) 4px);pointer-events:none;z-index:9999;}
+body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:48px 48px;opacity:0.2;pointer-events:none;z-index:0;}
+
+/* HEADER */
+header{position:relative;z-index:10;display:flex;align-items:center;justify-content:space-between;padding:0 28px;height:56px;border-bottom:1px solid var(--border);background:rgba(4,6,13,0.98);}
+.logo{display:flex;align-items:center;gap:12px;}
+.logo-icon{width:32px;height:32px;border:2px solid var(--green);border-radius:8px;display:flex;align-items:center;justify-content:center;animation:pb 2s ease-in-out infinite;}
+.logo-icon::after{content:'';width:8px;height:8px;background:var(--green);border-radius:50%;animation:pd 2s ease-in-out infinite;}
+@keyframes pb{0%,100%{box-shadow:0 0 0 0 rgba(0,255,136,0.4);}50%{box-shadow:0 0 0 8px rgba(0,255,136,0);}}
+@keyframes pd{0%,100%{transform:scale(1);}50%{transform:scale(0.6);opacity:0.4;}}
+.logo h1{font-size:19px;font-weight:800;letter-spacing:-0.5px;}
+.logo h1 span{color:var(--green);}
+.hdr-r{display:flex;align-items:center;gap:16px;}
+.pill{display:flex;align-items:center;gap:6px;padding:5px 12px;border-radius:99px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;border:1px solid;transition:all 0.3s;}
+.pill.ok  {background:rgba(0,255,136,0.08);border-color:var(--green);color:var(--green);}
+.pill.bad {background:rgba(255,45,85,0.12); border-color:var(--red);  color:var(--red); animation:tf 0.9s ease-in-out infinite alternate;}
+.pill.warn{background:rgba(255,170,0,0.1); border-color:var(--amber);color:var(--amber);}
+.pill .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
+@keyframes tf{from{box-shadow:0 0 0 0 rgba(255,45,85,0.3);}to{box-shadow:0 0 16px 4px rgba(255,45,85,0.15);}}
+.mode-badge{font-family:var(--mono);font-size:9px;padding:4px 10px;border-radius:4px;letter-spacing:1px;text-transform:uppercase;}
+.mode-badge.cgroup{background:rgba(0,148,255,0.1);border:1px solid var(--blue);color:var(--blue);}
+.mode-badge.renice{background:rgba(255,170,0,0.1);border:1px solid var(--amber);color:var(--amber);}
+.clock{font-family:var(--mono);font-size:11px;color:var(--text2);}
+
+/* LAYOUT */
+.app{position:relative;z-index:1;display:grid;grid-template-columns:1fr 320px;grid-template-rows:auto 1fr;height:calc(100vh - 56px);overflow:hidden;}
+
+/* STAT ROW */
+.stats-row{grid-column:1/-1;display:grid;grid-template-columns:repeat(5,1fr);border-bottom:1px solid var(--border);}
+.sc{padding:13px 18px;border-right:1px solid var(--border);position:relative;overflow:hidden;}
+.sc:last-child{border-right:none;}
+.sc::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--ac,var(--border2));transition:background 0.4s;}
+.sl{font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin-bottom:5px;}
+.sv{font-family:var(--mono);font-size:25px;font-weight:700;line-height:1;color:var(--ac,var(--text));transition:color 0.3s;}
+.ss{font-size:10px;color:var(--text2);margin-top:4px;}
+
+/* MAIN */
+.main-area{display:flex;flex-direction:column;border-right:1px solid var(--border);overflow:hidden;}
+
+/* THREAT PANEL — full classification detail */
+#threat-panel{display:none;margin:10px 16px 0;border:1px solid var(--red);border-left:4px solid var(--red);border-radius:8px;background:rgba(255,45,85,0.06);overflow:hidden;}
+.tp-header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid rgba(255,45,85,0.2);}
+.tp-badge{font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:3px 7px;background:var(--red);color:#fff;border-radius:3px;}
+.tp-name{font-size:14px;font-weight:700;color:var(--red);flex:1;}
+.sdots{display:flex;gap:3px;}
+.sdots .d{width:7px;height:7px;border-radius:50%;}
+.sdots .d.on{background:var(--red);}
+.sdots .d.off{background:var(--border2);}
+.tp-body{display:grid;grid-template-columns:1fr 1fr;gap:0;}
+.tp-cell{padding:8px 14px;border-right:1px solid rgba(255,45,85,0.15);}
+.tp-cell:last-child{border-right:none;}
+.tp-cell-label{font-family:var(--mono);font-size:8px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);margin-bottom:4px;}
+.tp-cell-val{font-family:var(--mono);font-size:11px;color:var(--text2);line-height:1.5;}
+
+/* OPT PANEL — what we did and why */
+#opt-panel{display:none;margin:6px 16px 0;border-radius:8px;overflow:hidden;transition:border-color 0.3s;}
+.op-header{display:flex;align-items:center;gap:8px;padding:8px 14px;}
+.op-icon{font-size:14px;}
+.op-title{font-family:var(--mono);font-size:11px;font-weight:700;flex:1;}
+.op-method{font-family:var(--mono);font-size:8px;letter-spacing:1px;text-transform:uppercase;padding:3px 8px;border-radius:3px;}
+.op-body{padding:6px 14px 10px;}
+.op-why{font-family:var(--mono);font-size:10px;color:var(--text2);line-height:1.6;}
+.op-detail{font-family:var(--mono);font-size:10px;margin-top:4px;padding:6px 10px;border-radius:4px;line-height:1.5;}
+
+/* opt panel variants */
+#opt-panel.cgroup{border:1px solid var(--blue);border-left:4px solid var(--blue);background:rgba(0,148,255,0.05);}
+#opt-panel.cgroup .op-title{color:var(--blue);}
+#opt-panel.cgroup .op-method{background:rgba(0,148,255,0.15);color:var(--blue);}
+#opt-panel.cgroup .op-detail{background:rgba(0,148,255,0.08);color:var(--cyan);}
+#opt-panel.renice{border:1px solid var(--amber);border-left:4px solid var(--amber);background:rgba(255,170,0,0.05);}
+#opt-panel.renice .op-title{color:var(--amber);}
+#opt-panel.renice .op-method{background:rgba(255,170,0,0.15);color:var(--amber);}
+#opt-panel.renice .op-detail{background:rgba(255,170,0,0.08);color:var(--amber);}
+#opt-panel.restored{border:1px solid var(--green);border-left:4px solid var(--green);background:rgba(0,255,136,0.04);}
+#opt-panel.restored .op-title{color:var(--green);}
+#opt-panel.restored .op-method{background:rgba(0,255,136,0.12);color:var(--green);}
+#opt-panel.restored .op-detail{background:rgba(0,255,136,0.06);color:var(--green);}
+#opt-panel.log{border:1px solid var(--amber);border-left:4px solid var(--amber);background:rgba(255,170,0,0.04);}
+#opt-panel.log .op-title{color:var(--amber);}
+
+/* CHART */
+.chart-section{padding:12px 16px;border-bottom:1px solid var(--border);flex:1;min-height:0;}
+.sh{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.stitle{font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--text2);}
+.chart-wrap{position:relative;height:calc(100% - 26px);min-height:120px;}
+
+/* PROCESS TABLE */
+.proc-section{padding:10px 16px;overflow:hidden;}
+.ptable{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:10px;}
+.ptable th{text-align:left;color:var(--text3);font-size:7px;letter-spacing:2px;text-transform:uppercase;padding:0 6px 7px;border-bottom:1px solid var(--border);}
+.ptable td{padding:5px 6px;color:var(--text2);border-bottom:1px solid rgba(26,37,64,0.4);}
+.pr.fl td:first-child{color:var(--red);}
+.bw{background:var(--border);border-radius:2px;height:3px;width:70px;}
+.bf{height:3px;border-radius:2px;background:var(--green);transition:width 0.5s ease;}
+.bf.hi{background:var(--red);} .bf.md{background:var(--amber);}
+
+/* SIDEBAR */
+.sidebar{display:flex;flex-direction:column;overflow:hidden;}
+.gauges{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--border);}
+.gc{padding:14px 10px;text-align:center;border-right:1px solid var(--border);}
+.gc:last-child{border-right:none;}
+.gw{position:relative;width:78px;height:78px;margin:0 auto 6px;}
+.gw svg{width:78px;height:78px;transform:rotate(-90deg);}
+.gtrack{fill:none;stroke:var(--border2);stroke-width:6;}
+.gfill{fill:none;stroke-width:6;stroke-linecap:round;transition:stroke-dashoffset 0.8s cubic-bezier(.4,0,.2,1),stroke 0.3s;}
+.gval{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.gnum{font-family:var(--mono);font-size:16px;font-weight:700;line-height:1;}
+.gpct{font-size:8px;color:var(--text3);margin-top:1px;}
+.glbl{font-family:var(--mono);font-size:7px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);}
+
+.sp{padding:12px 13px;border-bottom:1px solid var(--border);}
+.slabel{font-family:var(--mono);font-size:7px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);margin-bottom:7px;}
+.sbw{position:relative;height:24px;background:var(--bg3);border-radius:4px;overflow:hidden;border:1px solid var(--border);}
+.sbf{position:absolute;left:0;top:0;bottom:0;border-radius:4px;transition:width 0.8s cubic-bezier(.4,0,.2,1),background 0.3s;}
+.sbt{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:10px;font-weight:700;color:#fff;z-index:1;}
+.sscale{display:flex;justify-content:space-between;margin-top:4px;font-family:var(--mono);font-size:7px;color:var(--text3);}
+
+.mp{padding:10px 13px;border-bottom:1px solid var(--border);}
+.mbw{background:var(--bg3);border-radius:4px;height:5px;overflow:hidden;margin:6px 0 4px;border:1px solid var(--border);}
+.mbf{height:100%;background:linear-gradient(90deg,var(--blue),var(--cyan));border-radius:4px;transition:width 0.5s ease;}
+.mst{font-family:var(--mono);font-size:9px;color:var(--text2);}
+
+.alog{flex:1;overflow-y:auto;padding:8px;}
+.alog::-webkit-scrollbar{width:3px;}
+.alog::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+.lst{font-family:var(--mono);font-size:7px;letter-spacing:2px;text-transform:uppercase;color:var(--text3);padding:2px 4px 7px;}
+.le{display:flex;flex-direction:column;gap:2px;padding:7px 8px;border-radius:5px;margin-bottom:3px;border:1px solid transparent;animation:li 0.3s ease;}
+.le:hover{border-color:var(--border2);}
+@keyframes li{from{opacity:0;transform:translateX(5px);}to{opacity:1;transform:translateX(0);}}
+.le.anomaly {background:rgba(255,45,85,0.05);}
+.le.action  {background:rgba(0,148,255,0.05);}
+.le.resolved{background:rgba(0,255,136,0.04);}
+.le.info    {background:rgba(255,255,255,0.02);}
+.lr1{display:flex;align-items:center;gap:5px;}
+.ltag{font-family:var(--mono);font-size:7px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:2px 5px;border-radius:3px;}
+.ltag.anomaly {background:rgba(255,45,85,0.2); color:var(--red);}
+.ltag.action  {background:rgba(0,148,255,0.15);color:var(--blue);}
+.ltag.resolved{background:rgba(0,255,136,0.12);color:var(--green);}
+.ltag.info    {background:rgba(255,255,255,0.06);color:var(--text2);}
+.lmsg{font-size:10px;font-weight:600;flex:1;}
+.ltime{font-family:var(--mono);font-size:7px;color:var(--text3);}
+.lsub{font-family:var(--mono);font-size:9px;color:var(--text2);padding-left:2px;}
+
+@keyframes sa{0%{box-shadow:inset 0 0 0 rgba(255,45,85,0);}25%{box-shadow:inset 0 0 80px rgba(255,45,85,0.1);}100%{box-shadow:inset 0 0 0 rgba(255,45,85,0);}}
+.ba{animation:sa 1.2s ease;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon"></div>
+    <h1>Nex<span>Tracer</span></h1>
+  </div>
+  <div class="hdr-r">
+    <span class="mode-badge renice" id="mode-badge">MODE: RENICE</span>
+    <span class="pill warn" id="pill"><span class="dot"></span><span id="ptext">CONNECTING</span></span>
+    <span class="clock" id="clk">—</span>
+  </div>
+</header>
+
+<div class="app">
+  <!-- STAT CARDS -->
+  <div class="stats-row">
+    <div class="sc" style="--ac:var(--green)"><div class="sl">CPU Usage</div><div class="sv" id="s-cpu">—</div><div class="ss">System-wide</div></div>
+    <div class="sc" style="--ac:var(--blue)"> <div class="sl">Memory</div><div class="sv" id="s-mem">—</div><div class="ss" id="s-mem2">—</div></div>
+    <div class="sc" style="--ac:var(--amber)"><div class="sl">Anomaly Score</div><div class="sv" id="s-score">0%</div><div class="ss">vs baseline</div></div>
+    <div class="sc" style="--ac:var(--red)">  <div class="sl">Threat Status</div><div class="sv" id="s-thr" style="font-size:14px;padding-top:5px">NOMINAL</div><div class="ss" id="s-thrsub">All systems green</div></div>
+    <div class="sc" style="--ac:var(--cyan)"> <div class="sl">Auto Actions</div><div class="sv" id="s-acts">0</div><div class="ss">This session</div></div>
+  </div>
+
+  <!-- MAIN AREA -->
+  <div class="main-area">
+
+    <!-- THREAT CLASSIFICATION PANEL -->
+    <div id="threat-panel">
+      <div class="tp-header">
+        <span class="tp-badge" id="tp-cat">THREAT</span>
+        <span class="tp-name"  id="tp-name">—</span>
+        <div class="sdots"     id="tp-dots"></div>
+      </div>
+      <div class="tp-body">
+        <div class="tp-cell">
+          <div class="tp-cell-label">Why flagged</div>
+          <div class="tp-cell-val" id="tp-reason">—</div>
+        </div>
+        <div class="tp-cell">
+          <div class="tp-cell-label">Classification signals</div>
+          <div class="tp-cell-val" id="tp-basis">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- OPTIMIZATION PANEL -->
+    <div id="opt-panel">
+      <div class="op-header">
+        <span class="op-icon" id="op-icon">⚡</span>
+        <span class="op-title" id="op-title">—</span>
+        <span class="op-method" id="op-method">—</span>
+      </div>
+      <div class="op-body">
+        <div class="op-why" id="op-why">—</div>
+        <div class="op-detail" id="op-detail">—</div>
+      </div>
+    </div>
+
+    <!-- CHART -->
+    <div class="chart-section">
+      <div class="sh">
+        <span class="stitle">Live Telemetry — CPU &amp; Memory</span>
+        <span class="stitle" id="cmode" style="color:var(--text3)">BASELINE LEARNING</span>
+      </div>
+      <div class="chart-wrap"><canvas id="chart"></canvas></div>
+    </div>
+
+    <!-- PROCESS TABLE -->
+    <div class="proc-section">
+      <div class="sh">
+        <span class="stitle">Top Processes</span>
+        <span class="stitle" id="pnote" style="color:var(--text3)">MONITORING</span>
+      </div>
+      <table class="ptable">
+        <thead><tr><th>PID</th><th>Process</th><th>CPU %</th><th>Load</th><th>MEM %</th><th>Status</th></tr></thead>
+        <tbody id="ptbody"><tr><td colspan="6" style="color:var(--text3);text-align:center;padding:12px">Connecting...</td></tr></tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar">
+    <div class="gauges">
+      <div class="gc">
+        <div class="gw">
+          <svg viewBox="0 0 78 78"><circle class="gtrack" cx="39" cy="39" r="30" stroke-dasharray="188"/><circle class="gfill" id="cpugf" cx="39" cy="39" r="30" stroke="var(--green)" stroke-dasharray="188" stroke-dashoffset="188"/></svg>
+          <div class="gval"><span class="gnum" id="cpugn" style="color:var(--green)">0</span><span class="gpct">%</span></div>
+        </div>
+        <div class="glbl">CPU</div>
+      </div>
+      <div class="gc">
+        <div class="gw">
+          <svg viewBox="0 0 78 78"><circle class="gtrack" cx="39" cy="39" r="30" stroke-dasharray="188"/><circle class="gfill" id="memgf" cx="39" cy="39" r="30" stroke="var(--blue)" stroke-dasharray="188" stroke-dashoffset="188"/></svg>
+          <div class="gval"><span class="gnum" id="memgn" style="color:var(--blue)">0</span><span class="gpct">%</span></div>
+        </div>
+        <div class="glbl">MEM</div>
+      </div>
+    </div>
+
+    <div class="sp">
+      <div class="slabel">Anomaly Confidence</div>
+      <div class="sbw"><div class="sbf" id="sbar" style="width:0%;background:var(--green)"></div><span class="sbt" id="stxt">SAFE</span></div>
+      <div class="sscale"><span>BASELINE</span><span>SUSPICIOUS</span><span>CRITICAL</span></div>
+    </div>
+
+    <div class="mp">
+      <div class="slabel">Detection Engine</div>
+      <div class="mbw"><div class="mbf" id="mbar" style="width:0%"></div></div>
+      <div class="mst" id="mst">Initializing...</div>
+    </div>
+
+    <div class="alog">
+      <div class="lst">Event Log</div>
+      <div id="logs"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── CLOCK ──────────────────────────────────────
+setInterval(() => {
+  document.getElementById('clk').textContent =
+    new Date().toLocaleTimeString('en-US', {hour12:false}) + ' LOCAL';
+}, 1000);
+
+// ── CHART ───────────────────────────────────────
+const N=30, lbs=Array(N).fill(''), cpuD=Array(N).fill(null), memD=Array(N).fill(null), anoD=Array(N).fill(null);
+const ch = new Chart(document.getElementById('chart').getContext('2d'), {
+  type:'line',
+  data:{labels:lbs, datasets:[
+    {label:'CPU %',   data:cpuD, borderColor:'#00ff88', backgroundColor:'rgba(0,255,136,0.07)', borderWidth:2, pointRadius:0, fill:true, tension:0.4},
+    {label:'Memory %',data:memD, borderColor:'#0094ff', backgroundColor:'rgba(0,148,255,0.07)', borderWidth:2, pointRadius:0, fill:true, tension:0.4},
+    {label:'Anomaly', data:anoD, borderColor:'transparent', pointBackgroundColor:'#ff2d55', pointRadius:5, fill:false, showLine:false}
+  ]},
+  options:{
+    responsive:true, maintainAspectRatio:false, animation:{duration:250},
+    interaction:{mode:'index', intersect:false},
+    plugins:{
+      legend:{position:'bottom', labels:{color:'#8899bb', font:{family:'Space Mono',size:9}, boxWidth:10, padding:12}},
+      tooltip:{backgroundColor:'rgba(8,13,24,0.95)', borderColor:'#1a2540', borderWidth:1, titleColor:'#e2e8f0', bodyColor:'#8899bb', bodyFont:{family:'Space Mono',size:10}}
+    },
+    scales:{
+      x:{grid:{color:'rgba(26,37,64,0.5)'}, ticks:{color:'#445566', font:{family:'Space Mono',size:8}, maxTicksLimit:5}},
+      y:{min:0, max:100, grid:{color:'rgba(26,37,64,0.5)'}, ticks:{color:'#445566', font:{family:'Space Mono',size:8}, callback:v=>v+'%'}}
+    }
+  }
+});
+function pushCh(cpu, mem, ano) {
+  const t = new Date().toLocaleTimeString('en-US',{hour12:false});
+  lbs.push(t); lbs.shift(); cpuD.push(cpu); cpuD.shift();
+  memD.push(mem); memD.shift(); anoD.push(ano?cpu:null); anoD.shift();
+  ch.update('none');
+}
+
+// ── GAUGE ──────────────────────────────────────
+function setG(fi, ni, v, lo=60, hi=85) {
+  const c=188, o=c-(v/100)*c;
+  document.getElementById(fi).style.strokeDashoffset = o;
+  document.getElementById(ni).textContent = Math.round(v);
+  const col = v>=hi?'var(--red)':v>=lo?'var(--amber)':(fi.includes('cpu')?'var(--green)':'var(--blue)');
+  document.getElementById(fi).style.stroke = col;
+  document.getElementById(ni).style.color  = col;
+}
+
+// ── SCORE BAR ──────────────────────────────────
+function setScore(score) {
+  const b=document.getElementById('sbar'), t=document.getElementById('stxt');
+  b.style.width = score + '%';
+  if      (score < 30) { b.style.background='var(--green)'; t.textContent='SAFE'; }
+  else if (score < 65) { b.style.background='var(--amber)'; t.textContent='ELEVATED'; }
+  else                 { b.style.background='var(--red)';   t.textContent='CRITICAL'; }
+  document.getElementById('s-score').textContent = score + '%';
+}
+
+// ── SEVERITY DOTS ──────────────────────────────
+function dots(s, el='tp-dots') {
+  document.getElementById(el).innerHTML =
+    Array.from({length:5},(_,i)=>`<div class="d ${i<s?'on':'off'}"></div>`).join('');
+}
+
+// ── PROCESS TABLE ──────────────────────────────
+function renderP(procs, tid) {
+  const tb = document.getElementById('ptbody');
+  if (!procs||!procs.length) {
+    tb.innerHTML='<tr><td colspan="6" style="color:var(--text3);text-align:center;padding:10px;font-size:10px">Fetching processes...</td></tr>';
+    return;
+  }
+  tb.innerHTML = procs.map(p => {
+    const c=p.cpu_percent||0, m=p.memory_percent||0, fl=p.pid===tid;
+    const bc=c>60?'hi':c>30?'md':'', cc=c>60?'var(--red)':c>30?'var(--amber)':'var(--green)';
+    return `<tr class="pr ${fl?'fl':''}">
+      <td>${p.pid}</td><td>${p.name}</td>
+      <td style="color:${cc}">${c.toFixed(1)}</td>
+      <td><div class="bw"><div class="bf ${bc}" style="width:${Math.min(c,100)}%"></div></div></td>
+      <td>${m.toFixed(1)}</td>
+      <td style="font-size:8px;font-family:var(--mono);color:${fl?'var(--red)':'var(--text3)'}">
+        ${fl?'⚠ FLAGGED':(p.status||'—')}
+      </td></tr>`;
+  }).join('');
+}
+
+// ── EVENT LOG ──────────────────────────────────
+function log(type, msg, sub='') {
+  const w=document.getElementById('logs'), t=new Date().toLocaleTimeString('en-US',{hour12:false});
+  const e=document.createElement('div'); e.className=`le ${type}`;
+  e.innerHTML=`<div class="lr1">
+    <span class="ltag ${type}">${type.toUpperCase()}</span>
+    <span class="lmsg">${msg}</span>
+    <span class="ltime">${t}</span>
+  </div>${sub?`<div class="lsub">${sub}</div>`:''}`;
+  w.insertBefore(e, w.firstChild);
+  while (w.children.length > 40) w.removeChild(w.lastChild);
+}
+
+// ── OPTIMIZATION PANEL UPDATER ─────────────────
+function showOptPanel(opt) {
+  const panel  = document.getElementById('opt-panel');
+  const action = opt.action;
+  const result = opt.result || opt.execution_result || {};
+  const method = result.method || (action==='CGROUP_THROTTLE'?'cgroup':action==='RENICE'?'renice':'log');
+
+  panel.style.display = 'block';
+
+  if (action === 'CGROUP_THROTTLE' || method === 'cgroup') {
+    panel.className = 'cgroup';
+    document.getElementById('op-icon').textContent   = '⚡';
+    document.getElementById('op-title').textContent  = `cgroups: "${opt.process_name}" (PID ${opt.pid}) → ${opt.cap_pct||'?'}% CPU cap`;
+    document.getElementById('op-method').textContent = 'CGROUP v2';
+    document.getElementById('op-why').textContent    = opt.why || '—';
+    document.getElementById('op-detail').textContent = result.detail || `Hard CPU cap enforced by Linux kernel — process cannot exceed ${opt.cap_pct||'?'}%`;
+
+  } else if (action === 'RENICE' || method === 'renice') {
+    panel.className = 'renice';
+    const nv = opt.nice_val || result.nice_val || 15;
+    document.getElementById('op-icon').textContent   = '↓';
+    document.getElementById('op-title').textContent  = `renice: "${opt.process_name}" (PID ${opt.pid}) priority → ${nv}`;
+    document.getElementById('op-method').textContent = 'RENICE';
+    document.getElementById('op-why').textContent    = opt.why || '—';
+    document.getElementById('op-detail').textContent = result.detail ||
+      `Scheduler priority set to ${nv}. Scale: 0=normal, 19=lowest. Process runs only when CPU is free.`;
+
+  } else if (action === 'RESTORED') {
+    panel.className = 'restored';
+    document.getElementById('op-icon').textContent   = '✅';
+    document.getElementById('op-title').textContent  = `Self-healed: "${opt.process_name}" — limits removed`;
+    document.getElementById('op-method').textContent = 'RESOLVED';
+    document.getElementById('op-why').textContent    = opt.reason || '—';
+    document.getElementById('op-detail').textContent =
+      `Previous action (${opt.was_action}) has been reversed. Process now running at normal priority with no resource caps.`;
+
+  } else if (action === 'LOG_ONLY') {
+    panel.className = 'log';
+    document.getElementById('op-icon').textContent   = '👁';
+    document.getElementById('op-title').textContent  = `Monitoring: "${opt.process_name}" — no action taken`;
+    document.getElementById('op-method').textContent = 'OBSERVE';
+    document.getElementById('op-why').textContent    = opt.why || '—';
+    document.getElementById('op-detail').textContent =
+      'Severity 2 threshold — intervention skipped to avoid false-positive disruption. Watching for escalation.';
+  }
+
+  document.getElementById('pnote').textContent = action==='RESTORED' ? 'MONITORING' : '⚠ ROGUE PROCESS FLAGGED';
+}
+
+// ── STATE ──────────────────────────────────────
+let acts=0, lastThreat=null, wasAno=false, loggedOpt=false;
+
+// ── MAIN DATA HANDLER ──────────────────────────
+function handleData(d) {
+
+  // Mode badge
+  const cgAvail = d.cgroup_mode;
+  const mb = document.getElementById('mode-badge');
+  mb.textContent = cgAvail ? 'MODE: CGROUP' : 'MODE: RENICE';
+  mb.className   = `mode-badge ${cgAvail ? 'cgroup' : 'renice'}`;
+
+  // Model status
+  const pct = d.training_progress || 0;
+  document.getElementById('mbar').style.width = pct + '%';
+  document.getElementById('mst').textContent  = d.model_ready
+    ? '✓ IForest active — monitoring'
+    : `Training — ${Math.round((pct/100)*60)} / 60 samples`;
+  document.getElementById('cmode').textContent = d.model_ready ? 'ACTIVE MONITORING' : 'BASELINE LEARNING';
+
+  // Core metrics
+  const cpu = d.cpu_percent || 0, mem = d.memory_percent || 0;
+  document.getElementById('s-cpu').textContent  = cpu.toFixed(1) + '%';
+  document.getElementById('s-mem').textContent  = mem.toFixed(1) + '%';
+  document.getElementById('s-mem2').textContent = `${d.memory_used_gb||'—'} / ${d.memory_total_gb||'—'} GB`;
+  setG('cpugf','cpugn', cpu);
+  setG('memgf','memgn', mem, 70, 88);
+  setScore(d.anomaly_score || 0);
+  pushCh(cpu, mem, d.anomaly && d.model_ready);
+
+  // Processes
+  const topPid = d.optimization?.pid || null;
+  renderP(d.top_processes || [], topPid);
+
+  const pill = document.getElementById('pill');
+  const pt   = document.getElementById('ptext');
+  const st   = document.getElementById('s-thr');
+  const ss   = document.getElementById('s-thrsub');
+  const tp   = document.getElementById('threat-panel');
+  const op   = document.getElementById('opt-panel');
+
+  // ── THREAT PANEL ─────────────────────────────
+  if (d.anomaly && d.threat && d.model_ready) {
+    const thr = d.threat;
+
+    tp.style.display = 'block';
+    document.getElementById('tp-cat').textContent    = thr.category    || 'ANOMALY';
+    document.getElementById('tp-name').textContent   = thr.threat_type || '—';
+    document.getElementById('tp-reason').textContent = thr.reason      || '—';
+    document.getElementById('tp-basis').textContent  = thr.classification_basis || '—';
+    dots(thr.severity || 1);
+
+    pill.className = `pill ${d.threat_confirmed?'bad':'warn'}`;
+    pt.textContent = d.threat_confirmed ? 'THREAT DETECTED' : 'SUSPICIOUS';
+
+    st.textContent    = thr.threat_type;
+    st.style.color    = thr.severity >= 4 ? 'var(--red)' : 'var(--amber)';
+    st.style.fontSize = '11px';
+    ss.textContent    = `Severity ${thr.severity}/5 — ${thr.category}`;
+
+    if (d.threat_confirmed && thr.threat_type !== lastThreat) {
+      document.body.classList.add('ba');
+      setTimeout(() => document.body.classList.remove('ba'), 1200);
+      log('anomaly', thr.threat_type, thr.reason);
+      lastThreat = thr.threat_type;
+      loggedOpt  = false;
+    }
+    wasAno = true;
+
+  } else {
+    tp.style.display  = 'none';
+    pill.className    = `pill ${d.model_ready?'ok':'warn'}`;
+    pt.textContent    = d.model_ready ? 'MONITORING' : 'TRAINING';
+    st.textContent    = 'NOMINAL';
+    st.style.color    = 'var(--green)';
+    st.style.fontSize = '14px';
+    ss.textContent    = 'All systems green';
+    lastThreat        = null;
+
+    if (wasAno) {
+      log('resolved', 'Threat resolved', 'System returned to baseline');
+      wasAno    = false;
+      loggedOpt = false;
+    }
+  }
+
+  // ── OPTIMIZATION PANEL ────────────────────────
+  if (d.optimization && d.optimization.action && d.optimization.action !== 'NONE') {
+    const opt = d.optimization;
+    showOptPanel(opt);
+
+    // Log only once per incident
+    if (!loggedOpt && opt.action !== 'RESTORED') {
+      const method = opt.result?.method || opt.action;
+      if (method === 'cgroup') {
+        log('action', `cgroups: ${opt.process_name}`, `Hard cap → ${opt.cap_pct}% CPU (PID ${opt.pid})`);
+      } else if (method === 'renice') {
+        const nv = opt.nice_val || opt.result?.nice_val || 15;
+        log('action', `renice: ${opt.process_name}`, `Priority → ${nv} (PID ${opt.pid}) — deprioritized`);
+      } else if (opt.action === 'LOG_ONLY') {
+        log('action', `Monitoring: ${opt.process_name}`, 'Severity 2 — observe only');
+      }
+      acts++;
+      document.getElementById('s-acts').textContent = acts;
+      loggedOpt = true;
+    }
+
+    if (opt.action === 'RESTORED' && !loggedOpt) {
+      log('resolved', `Self-healed: ${opt.process_name}`, `${opt.was_action} lifted — process back to normal`);
+      loggedOpt = true;
+      setTimeout(() => { op.style.display = 'none'; }, 6000);
+    }
+
+  } else if (!d.anomaly) {
+    // Only hide if there's no active threat
+    if (!wasAno) {
+      op.style.display = 'none';
+      document.getElementById('pnote').textContent = 'MONITORING';
+    }
+  }
+}
+
+// ── WEBSOCKET ──────────────────────────────────
+function connect() {
+  const ws = new WebSocket('ws://localhost:8000/ws');
+
+  ws.onopen = () => {
+    log('info', 'Connected to NexTracer backend', 'Real-time telemetry stream active');
+    document.getElementById('pill').className    = 'pill ok';
+    document.getElementById('ptext').textContent = 'MONITORING';
+  };
+
+  ws.onmessage = (evt) => {
+    try { handleData(JSON.parse(evt.data)); }
+    catch(e) { console.error('[NexTracer]', e); }
+  };
+
+  ws.onerror = () => {
+    document.getElementById('pill').className    = 'pill warn';
+    document.getElementById('ptext').textContent = 'RECONNECTING';
+  };
+
+  ws.onclose = () => {
+    document.getElementById('pill').className    = 'pill warn';
+    document.getElementById('ptext').textContent = 'OFFLINE';
+    log('info', 'Connection lost — retrying in 3s...');
+    setTimeout(connect, 3000);
+  };
+}
+
+log('info', 'NexTracer started', 'Connecting to backend...');
+connect();
+</script>
+</body>
+</html>

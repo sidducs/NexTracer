@@ -1,0 +1,18 @@
+# Virtual Environments
+venv/
+env/
+.env
+nexenv/
+
+# Python junk
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.log
+.pytest_cache/
+
+# System-specific
+.DS_Store
+Thumbs.db
